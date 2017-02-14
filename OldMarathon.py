@@ -99,10 +99,9 @@ def CheckPhoneNumber(CurrentSMS):
 
 def CheckIfAdmin(CurrentSMS):
 	# Checks the phone number in the current SMS against admin numbers
-
-    adminNumber = "+233243405663"
+    #adminNumber = "+233243405663"
     currentNumber = CurrentSMS[1]
-    trustedNumbersRecords = marathonConnection.execute("SELECT * FROM TrustedNumbers WHERE Number = ?",[currentNumber])
+    trustedNumbersRecords = marathonConnection.execute("SELECT * FROM AdminNumbers WHERE Number = ?",[currentNumber])
     trustedNumbersRecord = trustedNumbersRecords.fetchone()
     
     try:
@@ -110,11 +109,16 @@ def CheckIfAdmin(CurrentSMS):
     except:
             trustedNumber = ''
     
-    if adminNumber == trustedNumber:
+    if currentNumber == trustedNumber:
             PrintStatusMessage('The number is Admin')
-            DeleteUser(CurrentSMS)
+            if re.match('add user ',CurrentSMS[2].lower()) != None:
+                    AddUser(CurrentSMS)
+            elif re.match('add admin ',CurrentSMS[2].lower()) != None:
+                    AddAdmin(CurrentSMS)
+            else:
+                    DeleteUser(CurrentSMS)
 
-    elif adminNumber != trustedNumber:
+    elif currentNumber != trustedNumber:
             PrintStatusMessage('The number is not an Admin. You cannot add a user!')
             SendResponseSMS(CurrentSMS,'The number is not an Admin. You cannot add a user!')
             LogRecord(CurrentSMS,'','N')
@@ -150,6 +154,9 @@ def SelectFunction(CurrentSMS):
 	if re.match('add user ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to add user')
 		CheckIfAdmin(CurrentSMS)
+	if re.match('add admin ',currentSMSText.lower()) != None:
+		PrintStatusMessage('Requesting to add admin')
+		CheckIfAdmin(CurrentSMS)
 	if re.match('delete user ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to delete user')
 		CheckIfAdmin(CurrentSMS)
@@ -159,7 +166,7 @@ def SelectFunction(CurrentSMS):
 	elif re.match('reseller ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find a reseller')
 		FindID(CurrentSMS)
-	elif re.match('id ',currentSMSText.lower()) != None:
+	elif re.match('details ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find a reseller details')
 		FindDetails(CurrentSMS)
 	elif re.match('sales ',currentSMSText.lower()) != None:
@@ -183,7 +190,10 @@ def AddUser(CurrentSMS):
 		userPhoneNumber = extraction[0][1]
 
 		if userPhoneNumber[0:4] != '+233':
-			userPhoneNumber = '+233' + userPhoneNumber
+                        #userPhoneNumber[0:1]==' '
+                        #userPhoneNumber == userPhoneNumber [0:1] + [
+			userPhoneNumber = '+233' + userPhoneNumber[1:15]
+			print userPhoneNumber
 
 		marathonConnection.execute("INSERT INTO trustednumbers (number, name) VALUES (?,?);",[userPhoneNumber,userName])
 		marathonConnection.commit()
@@ -199,6 +209,37 @@ def AddUser(CurrentSMS):
 		SendResponseSMS(CurrentSMS,Response)
 	except:
 	 	SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: Add user <name> with number <phone number>")
+
+def AddAdmin(CurrentSMS):
+	# Add a trusted number to the internal database
+
+	try:
+		currentSMSText = CurrentSMS[2]
+		PrintStatusMessage('Adding admin...')
+		extraction = re.findall('add admin ([ a-z]+) with number ([0-9\+]+)',currentSMSText.lower())
+		userName = extraction[0][0]
+		userPhoneNumber = extraction[0][1]
+
+		if userPhoneNumber[0:4] != '+233':
+                        #userPhoneNumber[0:1]==' '
+                        #userPhoneNumber == userPhoneNumber [0:1] + [
+			userPhoneNumber = '+233' + userPhoneNumber[1:15]
+			print userPhoneNumber
+
+		marathonConnection.execute("INSERT INTO adminnumbers (number, name) VALUES (?,?);",[userPhoneNumber,userName])
+		marathonConnection.commit()
+		Response = 'The user ' + userName + ' has been added as an Admin!'
+		PrintStatusMessage('Admin added')
+		PrintStatusMessage('Sending welcome message...')
+
+		# Send a welcome message to the new user!
+		welcomeMessage = 'Welcome to Admin Marathon!'		
+		SendSMSSerial(userPhoneNumber,welcomeMessage)
+		PrintStatusMessage('Welcome message sent')
+
+		SendResponseSMS(CurrentSMS,Response)
+	except:
+	 	SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: Add admin <name> with number <phone number>")
 
 def DeleteUser(CurrentSMS):
 	# Add a trusted number to the internal database
@@ -217,41 +258,42 @@ def DeleteUser(CurrentSMS):
 		marathonConnection.commit()
 		Response = 'The user ' + userPhoneNumber + ' has been deleted!'
 		PrintStatusMessage('User deleted')
-		PrintStatusMessage('Sending farewell message...')
+		PrintStatusMessage('Sending delete message...')
 
-		# Send a farewell message to the old user!
-		farewellMessage = 'You are deleted from Marathon!'		
-		SendSMSSerial(userPhoneNumber,farewellMessage)
-		PrintStatusMessage('Farewell message sent')
+		# Send a delete message to the old user!
+		deleteMessage = 'You are deleted from Marathon!'		
+		SendSMSSerial(userPhoneNumber,deleteMessage)
+		PrintStatusMessage('Delete message sent')
 		SendResponseSMS(CurrentSMS,Response)
 	except:
 	 	SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: delete user <phone number>")
 
 def Help(CurrentSMS):
-	# Checks the phone number in the current SMS against admin numbers
+        # Checks the phone number in the current SMS against admin numbers
 
 	try:
-
-		searchResultObject = marathonConnection.execute("SELECT querystructure FROM Help;")
-		searchResults = searchResultObject.fetchone()
+		searchResultObject = marathonConnection.execute("SELECT querystructure FROM Help")
+		searchResults = searchResultObject.fetchall()
 		resultCount = len(searchResults)
 
 		# The response depends on the number of results from the query
 		if resultCount == 0:
 			Response = 'Sorry, your search gave no results. Please send: help'
 			SendResponseSMS(CurrentSMS,Response)
+			print Response
 		elif resultCount >= 1:
 			Response = 'RESULT: '
 			for row in searchResults:
-				Response += '%s ;' % (row[0])	
-			SendResponseSMS(CurrentSMS,Response)					
+				Response += '%s ;' % (row[0])
+			SendResponseSMS(CurrentSMS,Response)
+				
 		else:
-			Response = "Sorry there was a problem. Please send 1: help"
+			Response = "Sorry there was a problem. Please send : help"
 			SendResponseSMS(CurrentSMS,Response)
 
 	except:
-		SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send 2: help")
-
+		SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send : help")
+		
 def FindID(CurrentSMS):
 	# Look up the ID of a specific reseller; The phone number is the search critetria
 
@@ -266,7 +308,7 @@ def FindID(CurrentSMS):
 
 		# The response depends on the number of results from the query
 		if resultCount == 0:
-			Response = 'Sorry, your search gave no results. Please send: reseller <phone number of person>'
+			Response = 'Sorry, your search gave no results. Please send: reseller 1<phone number of person>'
 			SendResponseSMS(CurrentSMS,Response)
 		elif resultCount == 1:
 			Response = 'RESULT: '
@@ -288,18 +330,18 @@ def FindID(CurrentSMS):
 			Response = 'Your search gave ' + str(resultCount) + ' results. Please be more specific.'
 			SendResponseSMS(CurrentSMS,Response)
 		else:
-			Response = "Sorry there was a problem. Please send: reseller <phone number of person>"
+			Response = "Sorry there was a problem. Please send: reseller 2<phone number of person>"
 			SendResponseSMS(CurrentSMS,Response)
 
 	except:
-		SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: reseller <phone number of person>")
+		SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: reseller 3<phone number of person>")
 
 def FindDetails(CurrentSMS):
 	# Look up the Details of a specific reseller; The ID is the search critetria
 
 	try:
 		currentSMSText = CurrentSMS[2]
-		extraction = re.findall('id ([0-9\+]+)',currentSMSText.lower())
+		extraction = re.findall('details ([0-9\+]+)',currentSMSText.lower())
 		searchTerm = extraction[0]
 		searchQuery = '%' + searchTerm + '%'
 		searchResultObject = fodderConnection.execute("select PhoneNo1,l.cityTown,landmark,p.region from party p join locations l on p.cityTownID = l.locationID where partyID like ?;",[searchQuery])
@@ -308,7 +350,7 @@ def FindDetails(CurrentSMS):
 
 		# The response depends on the number of results from the query
 		if resultCount == 0:
-			Response = 'Sorry, your search gave no results. Please send: id  <ID of person>'
+			Response = 'Sorry, your search gave no results. Please send: details  <ID of person>'
 			SendResponseSMS(CurrentSMS,Response)
 		elif resultCount == 1:
 			Response = 'RESULT: '
@@ -330,11 +372,11 @@ def FindDetails(CurrentSMS):
 			Response = 'Your search gave ' + str(resultCount) + ' results. Please be more specific.'
 			SendResponseSMS(CurrentSMS,Response)
 		else:
-			Response = "Sorry there was a problem. Please send: id  <ID of person>"
+			Response = "Sorry there was a problem. Please send: details  <ID of person>"
 			SendResponseSMS(CurrentSMS,Response)
 
 	except:
-		SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: id  <ID of person>")
+		SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: details  <ID of person>")
 
 def SalesStatus(CurrentSMS):
 	# Look up the Sales Status of a specific reseller; The ID is the search critetria
