@@ -137,7 +137,57 @@ def CheckIfAdmin(CurrentSMS):
             PrintStatusMessage('ERROR: An error occoured while trying to confirm that the adder is an admin...')
             SendResponseSMS(CurrentSMS,'ERROR: An error occoured while trying to confirm that the adder is an admin...')
 
-def CheckIfAdminOrReseller(CurrentSMS):
+def CheckIfReseller(CurrentSMS):
+	# Checks the phone number in the current SMS against reseller numbers
+    currentNumber = CurrentSMS[1]
+    trustedNumbersRecords = marathonConnection.execute("SELECT * FROM ResellersNumbers WHERE Number = ?",[currentNumber])
+    trustedNumbersRecord = trustedNumbersRecords.fetchone()
+    
+    searchResultObject = fodderConnection.execute("select partyID from vAllPartiesWithExtraDatails where phoneNos like ?;",[currentNumber])
+    searchResults = searchResultObject.fetchone()
+    
+    try:
+            trustedNumber = trustedNumbersRecord[1]
+    except:
+            trustedNumber = ''
+    
+    if currentNumber == trustedNumber:
+            PrintStatusMessage('The number is Reseller')
+            if CurrentSMS[2].lower()== searchResults or CurrentSMS[2].lower()== currentNumber:
+                    PrintStatusMessage('The ID is the Resellers ID')
+                    if re.match('reseller ',CurrentSMS[2].lower()) != None:  
+                            FindID(CurrentSMS)
+                    elif re.match('details ',CurrentSMS[2].lower()) != None:
+                            FindDetails(CurrentSMS)
+                    elif re.match('sales ',CurrentSMS[2].lower()) != None:
+                            SalesStatus(CurrentSMS)
+                    elif re.match('job card ',CurrentSMS[2].lower()) != None:
+                            JobCard(CurrentSMS)
+                    else:
+                            SendResponseSMS(CurrentSMS,'Sorry, I did not understand your request Reseller!')
+                    
+            elif CurrentSMS[2].lower() != searchResults:
+                    PrintStatusMessage('The ID is not the senders ID')
+                    SendResponseSMS(CurrentSMS,'The ID is not the senders ID!')
+                    LogRecord(CurrentSMS,'','N')
+                    
+    elif currentNumber != trustedNumber:
+            PrintStatusMessage('The number is not a reseller but a trusted number')
+            if re.match('reseller ',CurrentSMS[2].lower()) != None:
+                    FindID(CurrentSMS)
+            elif re.match('details ',CurrentSMS[2].lower()) != None:
+                    FindDetails(CurrentSMS)
+            elif re.match('sales ',CurrentSMS[2].lower()) != None:
+                    SalesStatus(CurrentSMS)
+            elif re.match('job card ',CurrentSMS[2].lower()) != None:
+                    JobCard(CurrentSMS)
+            else:
+                            SendResponseSMS(CurrentSMS,'Sorry, I did not understand your request Reseller!')
+    else:
+            PrintStatusMessage('ERROR: An error occoured while trying to confirm that the sender is a reseller...')
+            SendResponseSMS(CurrentSMS,'ERROR: An error occoured while trying to confirm that the sender is a reseller...')
+
+def CheckIfAdminOrStaffer(CurrentSMS):
 	# Checks the phone number in the current SMS against admin numbers
     currentNumber = CurrentSMS[1]
     trustedNumbersRecords = marathonConnection.execute("SELECT * FROM AdminNumbers WHERE Number = ?",[currentNumber])
@@ -233,25 +283,25 @@ def SelectFunction(CurrentSMS):
 		CheckIfAdmin(CurrentSMS)
 	if re.match('all resellers',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find all system staffers')
-		CheckIfAdminOrReseller(CurrentSMS)
+		CheckIfAdminOrStaffer(CurrentSMS)
 	if re.match('reseller named',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find a specific system resellers')
-		CheckIfAdminOrReseller(CurrentSMS)
+		CheckIfAdminOrStaffer(CurrentSMS)
 	elif re.match('help',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find all the queries structure')
 		Help(CurrentSMS)
 	elif re.match('reseller ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find a reseller')
-		FindID(CurrentSMS)
+		CheckIfReseller(CurrentSMS)
 	elif re.match('details ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find a reseller details')
-		FindDetails(CurrentSMS)
+		CheckIfReseller(CurrentSMS)
 	elif re.match('sales ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find a reseller sales status')
-		SalesStatus(CurrentSMS)
+		CheckIfReseller(CurrentSMS)
 	elif re.match('job card ',currentSMSText.lower()) != None:
 		PrintStatusMessage('Requesting to find a reseller job card')
-		JobCard(CurrentSMS)
+		CheckIfReseller(CurrentSMS)
 	else:
 		Response = 'Sorry, I did not understand your request.'
 		SendResponseSMS(CurrentSMS,Response)
@@ -347,7 +397,7 @@ def AddReseller(CurrentSMS):
 	 	SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: add reseller [name] with number [phone number]")
 
 def DeleteStaffer(CurrentSMS):
-	# Add a trusted number to the internal database
+	# Delete a staffer from the staff table
 
 	try:
 		currentSMSText = CurrentSMS[2]
@@ -375,7 +425,7 @@ def DeleteStaffer(CurrentSMS):
 	 	SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: delete staffer [phone number]")
 
 def DeleteAdmin(CurrentSMS):
-	# Add a trusted number to the internal database
+	# Delete an admin from the admin table
 
 	try:
 		currentSMSText = CurrentSMS[2]
@@ -403,7 +453,7 @@ def DeleteAdmin(CurrentSMS):
 	 	SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: delete admin [phone number]")
 
 def DeleteReseller(CurrentSMS):
-	# Add a trusted number to the internal database
+	# Delete a reseller from the reseller table
 
 	try:
 		currentSMSText = CurrentSMS[2]
@@ -579,8 +629,9 @@ def FindID(CurrentSMS):
 			Response = "Sorry there was a problem. Please send: reseller [phone number of person]"
 			SendResponseSMS(CurrentSMS,Response)
 
-	except:
-		SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: reseller 3[phone number of person]")
+	except Exception as e:
+                print e
+		#SendResponseSMS(CurrentSMS,"Sorry there was a problem. Please send: reseller 3[phone number of person]")
 
 def FindDetails(CurrentSMS):
 	# Look up the Details of a specific reseller; The ID is the search critetria
@@ -716,7 +767,8 @@ def SendResponseSMS(CurrentSMS,Response):
 	# Sometimes the answer is longer than 160 characters, so we have to break it up into several messages.
 	individualMessageLength = 155 # max length of an individual message
 	responseLength = len(Response)
-	responseBlockCount = int(math.ceil(float((responseLength))/float(individualMessageLength))) # how many blocks does the message need to be broken into
+	# how many blocks does the message need to be broken into
+	responseBlockCount = int(math.ceil(float((responseLength))/float(individualMessageLength))) 
 
 	for i in range(1,responseBlockCount+1): # loop over blocks
 		blockStart = (i-1)*individualMessageLength
@@ -735,7 +787,7 @@ def SendResponseSMS(CurrentSMS,Response):
 	LogRecord(CurrentSMS,Response,'Y')
 
 def SendSMSSerial(number,message):
-	# This handles the serial-port communication nessisary to send an SMS
+	# This handles the serial-port communication necessary to send an SMS
 
 	print '----- SMS -----'
 	print message
